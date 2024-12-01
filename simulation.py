@@ -5,21 +5,23 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import time
+import functools
+
+from helpers import sq_norm
 
 
 def p_func(x_i, x_j):
     # communication falloff
-    # return X_MAX / (1 + np.linalg.norm(x_i - x_j) ** 2)
+    # return X_MAX / (1 + sq_norm(x_i - x_j))
     return 1
 
 
-#Let X_i be all possible states for agent i, given by the square [-X_MIN, X_MAX]^2. 
-# We initialize each agent to be equally spaced around the unit circle (i.e. x_i = [cos(2pi * i/N), sin(2pi * i/N)]).
+#Let X_i be all possible states for agent i, given by the square [X_MIN, X_MAX]^2. 
 # We want each agent to roam the region and take samples
 
 def x_init(num_agents):
-    # return np.array([[np.cos(2 * np.pi * i / num_agents), np.sin(2 * np.pi * i / num_agents)] for i in range(num_agents)])
-    return np.array([[0, 0] for i in range(num_agents)])
+    # initialize at random points in the square
+    return (X_MAX - X_MIN) * np.random.rand(num_agents, 2) + X_MIN
 
 # resource availability function - sum of M gaussians with amplitude am, center cm, and spread sm
 # theta is Mx3 array (ams, cms, sms)
@@ -29,11 +31,14 @@ def resource_func(theta_flat):
     cms = theta[:, 1:3]
     sms = theta[:, 3]
 
-    epsilon = 0.001 # for stability
-    return lambda x : np.sum([am * np.exp(-np.linalg.norm(x - cm) ** 2 / (2 * sm ** 2 + epsilon)) for am, cm, sm in zip(ams, cms, sms)])
+    eps = 0.0001 # for stability
+    return lambda x : np.sum([am * np.exp(-sq_norm(x - cm) / (2 * sm ** 2 + eps)) for am, cm, sm in zip(ams, cms, sms)])
 
 # theta is (ams, cmxs, cmys, sms)_i for i=1^N. We use MSE as the regression cost function
 def J_i_func(theta_i_flat, x_i_hist, y_i_hist):
+    # print("\n start j_i_func")
+    # print(x_i_hist)
+    # print(y_i_hist)
 
     f_i = resource_func(theta_i_flat)
 
@@ -45,17 +50,26 @@ def J_i_func(theta_i_flat, x_i_hist, y_i_hist):
 
     return cost / x_i_hist.shape[0]
 
+    # print(x_i_hist)
+    # fx = np.apply_along_axis(f_i, 0, x_i_hist)
+
+    # residual = (fx - y_i_hist).reshape(-1)
+
+    # return np.dot(residual, residual) / x_i_hist.shape[0]
+
 def sample_environment(x, theta_star):
     f_star = resource_func(theta_star)
-    res = np.abs(f_star(x) + np.random.normal(0, NOISE, (N, 1)))
+    res = np.zeros(N)
+    for i in range(N):
+        res[i] = f_star(x[i]) + np.random.normal(0, NOISE)
     return res
 
 
 def gen_theta_star():
-    np.random.seed(4)
-    ams = np.random.rand(M) * 1 + 1
-    cms = 2 * X_MAX * np.random.rand(M, 2) - X_MAX
-    sms = np.random.rand(M) * 2 + 1
+    np.random.seed(0)
+    ams = np.random.rand(M)
+    cms = (X_MAX - X_MIN) * np.random.rand(M, 2) + X_MIN
+    sms = np.random.rand(M)
 
     print(f"ams: {ams}\ncms: {cms}\nsms: {sms}")
     return np.array([ams, cms[:, 0], cms[:, 1], sms]).T
@@ -103,6 +117,11 @@ def heatmap(thetas, theta_star, admm_x):
 
     axs[1].set_title("Average Agent Estimate")
 
+    axs[0].set_xlim(X_MIN, X_MAX)
+    axs[0].set_ylim(X_MIN, X_MAX)
+    axs[1].set_xlim(X_MIN, X_MAX)
+    axs[1].set_ylim(X_MIN, X_MAX)
+
     plt.show()
     
 def plot_loss_curves(losses):
@@ -116,6 +135,10 @@ def plot_loss_curves(losses):
     axs[1].plot([loss["global"] for loss in losses])
     axs[1].set_title("Global Loss")
 
+    # log scale on y axis
+    axs[0].set_yscale('log')
+    axs[1].set_yscale('log')
+
     plt.show()
 
 
@@ -123,17 +146,17 @@ def theta_bounds():
     out = []
     for i in range(M):
         out.append((0, None))
-        out.append((-X_MAX, X_MAX))
-        out.append((-X_MAX, X_MAX))
+        out.append((X_MIN, X_MAX))
+        out.append((X_MIN, X_MAX))
         out.append((0, None))
     return out
 
-X_MIN = -3
-X_MAX = 3
+X_MIN = 0
+X_MAX = 1
 M = 1
-N = 4
+N = 3
 T = 1000
-NOISE = 0.0
+NOISE = 0.01
 
 def main():
     theta_star = gen_theta_star()
@@ -145,16 +168,17 @@ def main():
     def x_update_func(x):
         # x is a 2xN array
         # Each agent takes a random step
+        y = sample_environment(x, theta_star).reshape((1, N, 1))
+
         x = x.reshape((1, N, 2))
+
         nonlocal x_hist
         nonlocal y_hist
-
         x_hist = np.append(x_hist, x, axis=0)
-        y = sample_environment(x, theta_star).reshape((1, N, 1))
         y_hist = np.append(y_hist, y, axis=0)
         
-        epsilon = 1
-        return np.clip((1 - epsilon) * x + epsilon * (2 * X_MAX * np.random.rand(1, N, 2) - X_MAX), X_MIN, X_MAX).reshape((N, 2))
+        stepsize = 0.5
+        return np.clip((1 - stepsize) * x + stepsize * ((X_MAX - X_MIN) * np.random.rand(1, N, 2) + X_MIN), X_MIN, X_MAX).reshape((N, 2))
 
 
     Jis = np.array([
@@ -167,7 +191,7 @@ def main():
         losses["global"] = global_loss(admm.theta, x_hist, theta_star)
         loss_hist.append(losses)
 
-        if (k % 10 == 0):
+        if (k % 50 == 0):
             print(f"Local losses at iteration {k}: {[J_i_func(admm.theta[i], x_hist[:, i, :], y_hist[:, i, :]) for i in range(N)]}")
             print(f"Global loss at iteration {k}: {global_loss(admm.theta, x_hist, theta_star)}")
             print(admm.theta.reshape((N, M, 4)))

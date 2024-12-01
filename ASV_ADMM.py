@@ -1,6 +1,8 @@
 import scipy.optimize
 import numpy as np
 
+from helpers import sq_norm
+
 class ASV_ADMM:
 
     def __init__(self, Jis, num_agents, p_func, x_update_func, theta_init, x_init):
@@ -36,14 +38,13 @@ class ASV_ADMM:
         self._update_neighbors()
 
         # quadratic penalty parameter
-        self.rho = 0.0001
+        self.rho = 0.001
 
         # bregman divergence parameter
-        self.beta0 = 1000000000000
+        self.beta0 = 1000
 
         self.timestep = 1
 
-    
     def neighbors(self, i):
         return np.argwhere(self._neighbors[i])
     
@@ -53,21 +54,24 @@ class ASV_ADMM:
             denom += np.exp(self.p[i, l])
         return np.exp(self.p[i, j]) / denom
 
-    def update(self, theta_bounds):
+    def update(self, theta_bounds=None):
 
         next_theta = np.copy(self.theta)
 
         # primal update - can be done in parallel
         for i in range(self.num_agents):
 
-            def theta_i_func(theta_i_flat):
-                obj = self.J[i](theta_i_flat) + theta_i_flat.T @ self.e[i]
+            def theta_i_func(theta_i):
+                obj = self.J[i](theta_i) + self.e[i].T @ theta_i
                 for j in self.neighbors(i):
-                    obj += self.rho * self.alpha(i, j) * np.linalg.norm(theta_i_flat - (self.theta[i] + self.theta[j]) / 2) ** 2 \
-                           + np.sqrt(self.timestep) / self.beta0 * np.linalg.norm(theta_i_flat - self.theta[i]) ** 2
+                    obj += self.rho * self.alpha(i, j) * sq_norm(theta_i - (self.theta[i] + self.theta[j]) / 2) \
+                           + np.sqrt(self.timestep) / self.beta0 * sq_norm(theta_i - self.theta[i])
                 return obj
             
-            optim_result = scipy.optimize.minimize(theta_i_func, self.theta[i], bounds=theta_bounds)
+            optim_result = scipy.optimize.minimize(theta_i_func, 
+                                                   self.theta[i], 
+                                                   bounds=theta_bounds, 
+                                                   method='L-BFGS-B')
             if (optim_result.success):
                 next_theta[i] = optim_result.x
             else:
@@ -79,7 +83,8 @@ class ASV_ADMM:
         # dual update - can be done in parallel
         for i in range(self.num_agents):
             for j in self.neighbors(i):
-                next_e[i] += self.rho * self.alpha(i, j) * (next_theta[i] - next_theta[j]).reshape(-1)
+                # next_e[i] += self.rho * self.alpha(i, j) * (next_theta[i] - next_theta[j]).reshape(-1)
+                next_e[i] = self.e[i]
 
         # state update
         self._update_x()
