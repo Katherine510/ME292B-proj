@@ -31,8 +31,26 @@ def resource_func(theta_flat):
     cms = theta[:, 1:3]
     sms = theta[:, 3]
 
-    eps = 0.0001 # for stability
-    return lambda x : np.sum([am * np.exp(-sq_norm(x - cm) / (2 * sm ** 2 + eps)) for am, cm, sm in zip(ams, cms, sms)])
+    def eval_point(x):
+        return np.sum([am * np.exp(-sq_norm(x - cm) / (2 * sm ** 2)) for am, cm, sm in zip(ams, cms, sms)])
+
+    eps = 1e-6 # for stability
+    def func(X):
+        X = X.reshape(-1, 2)
+        # Compute differences and norms in a vectorized way
+        diff = X[:, None, :] - cms[None, :, :]  # Shape: (N, M, 2)
+        # print(f"diff: {diff}")
+        sq_diffs = sq_norm(diff, axis=2)    # Shape: (N, M)
+
+        # Compute Gaussian contributions
+        gaussians = ams * np.exp(-sq_diffs / (2 * sms ** 2 + eps))  # Shape: (N, M)
+
+        # Sum contributions from all components
+        res = np.sum(gaussians, axis=1)  # Shape: (N,)
+
+        return res.reshape(-1, 1)
+    
+    return func
 
 # theta is (ams, cmxs, cmys, sms)_i for i=1^N. We use MSE as the regression cost function
 def J_i_func(theta_i_flat, x_i_hist, y_i_hist):
@@ -42,27 +60,27 @@ def J_i_func(theta_i_flat, x_i_hist, y_i_hist):
 
     f_i = resource_func(theta_i_flat)
 
-    cost = 0
+    # cost = 0
 
-    for x, y in zip(x_i_hist, y_i_hist):
-        # print(x, f_i(x), y)
-        cost += (f_i(x) - y) ** 2
+    # for x, y in zip(x_i_hist, y_i_hist):
+    #     # print(x, f_i(x), y)
+    #     cost += (f_i(x) - y) ** 2
 
-    return cost / x_i_hist.shape[0]
+    # return cost / x_i_hist.shape[0]
 
-    # print(x_i_hist)
-    # fx = np.apply_along_axis(f_i, 0, x_i_hist)
+    # print(f_i(x_i_hist))
+    residual = (f_i(x_i_hist) - y_i_hist)
 
-    # residual = (fx - y_i_hist).reshape(-1)
+    return sq_norm(residual) / x_i_hist.shape[0]
 
-    # return np.dot(residual, residual) / x_i_hist.shape[0]
-
-def sample_environment(x, theta_star):
+def sample_environment(X, theta_star):
     f_star = resource_func(theta_star)
-    res = np.zeros(N)
-    for i in range(N):
-        res[i] = f_star(x[i]) + np.random.normal(0, NOISE)
-    return res
+    # res = np.zeros(N)
+    # for i in range(N):
+    #     res[i] = f_star(X[i]) + np.random.normal(0, NOISE)
+    # return res
+    # print((f_star(X) + np.random.normal(0, NOISE, size=(N,1))).shape)
+    return f_star(X) + np.random.normal(0, NOISE, size=(N,1))
 
 
 def gen_theta_star():
@@ -78,14 +96,19 @@ def gen_theta_star():
 def theta_init(num_agents):
     return (np.random.rand(num_agents, M, 4)).reshape((num_agents, -1))
 
-def global_loss(theta, x_hist, theta_star):
+def global_loss(thetas, x_hist, theta_star):
     f_star = resource_func(theta_star)
     cost = 0
     for i in range(N):
-        f_i = resource_func(theta[i])
-        for x in x_hist[:, i, :]:
-            cost += (f_i(x) - f_star(x)) ** 2
+        f_i = resource_func(thetas[i])
+        # print(f_i(x_hist[:, i, :]).shape)
+        cost += sq_norm(f_i(x_hist[:, i, :]) - f_star(x_hist[:, i, :]))
     return cost / (N * x_hist.shape[0])
+    # for i in range(N):
+    #     f_i = resource_func(theta[i])
+    #     for x in x_hist[:, i, :]:
+    #         cost += (f_i(x) - f_star(x)) ** 2
+    # return cost / (N * x_hist.shape[0])
 
 def heatmap(thetas, theta_star, admm_x):
 
@@ -153,15 +176,17 @@ def theta_bounds():
 
 X_MIN = 0
 X_MAX = 1
-M = 1
-N = 3
+M = 4
+N = 5
 T = 1000
-NOISE = 0.01
+NOISE = 0.0
 
 def main():
     theta_star = gen_theta_star()
 
     x_hist = np.array([x_init(N)]).reshape((1, N, 2))
+    # print(sample_environment(x_hist[-1], theta_star).shape)
+    # print(x_hist[-1].shape)
     y_hist = np.array([sample_environment(x_hist[-1], theta_star)]).reshape((1, N, 1))
     loss_hist = []
 
