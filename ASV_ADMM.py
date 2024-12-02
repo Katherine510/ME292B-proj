@@ -41,7 +41,7 @@ class ASV_ADMM:
         self.use_bregman = use_bregman
 
         # quadratic penalty parameter
-        self.rho = 0.1
+        self.rho = 0.001
 
         # bregman divergence parameter
         self.beta0 = 1000
