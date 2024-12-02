@@ -162,7 +162,7 @@ X_MIN = -1
 X_MAX = 1
 M = 3
 N = 3
-T = 300
+T = 30
 NOISE = 0.1
 
 def main():
@@ -172,8 +172,8 @@ def main():
     y_hist = np.array([sample_environment(x_hist[-1], theta_star)]).reshape((1, N, 1))
     loss_hist = []
     
-    fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    out = cv2.VideoWriter("vid.mp4", fourcc, 20.0, (640, 480))
+    fourcc = cv2.VideoWriter_fourcc(*'mp4V')
+    out = cv2.VideoWriter("vid.mp4", fourcc, 1, (1000, 500))
 
     def x_update_func(x):
         # x is a 2xN array
@@ -213,7 +213,6 @@ def main():
             plot_loss_curves(loss_hist)
         admm.update(theta_bounds())
         out.release()
-        cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     main()
