@@ -8,7 +8,7 @@ from helpers import sq_norm
 
 def p_func(x_i, x_j):
     # communication falloff
-    falloff_rate = 3
+    falloff_rate = 1
     return 1 / (1 + falloff_rate * sq_norm(x_i - x_j))
     # return 1
 
@@ -61,10 +61,10 @@ def sample_environment(X, theta_star):
 
 
 def gen_theta_star():
-    np.random.seed(0)
-    ams = np.random.rand(M) * (X_MAX - X_MIN) / 2
+    np.random.seed(79)
+    ams = np.random.rand(M) * (X_MAX - X_MIN) / 4
     cms = (X_MAX - X_MIN) * np.random.rand(M, 2) + X_MIN
-    sms = np.random.rand(M) * (X_MAX - X_MIN) + 0.5
+    sms = np.random.rand(M) * (X_MAX - X_MIN) / 3 + 0.5
 
     print(f"ams: {ams}\ncms: {cms}\nsms: {sms}")
     return np.array([ams, cms[:, 0], cms[:, 1], sms]).T
@@ -152,9 +152,9 @@ def theta_bounds():
         out.append((0, None))
     return out
 
-X_MIN = -2
-X_MAX = 2
-M = 5
+X_MIN = -1
+X_MAX = 1
+M = 3
 N = 3
 T = 10000
 NOISE = 0.1
@@ -186,7 +186,7 @@ def main():
         lambda theta_i_flat : J_i_func(theta_i_flat, x_hist[:, i, :], y_hist[:, i, :])
         for i in range(N)
     ])
-    admm = BaselineADMM(Jis, N, p_func, x_update_func, theta_init(N), x_init(N))
+    admm = ASV_ADMM(Jis, N, p_func, x_update_func, theta_init(N), x_init(N))
     for k in range(T):
         losses = {i : J_i_func(admm.theta[i], x_hist[:, i, :], y_hist[:, i, :]) for i in range(N)}
         losses["global"] = global_loss(admm.theta, x_hist, theta_star)
