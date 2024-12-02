@@ -86,7 +86,7 @@ def global_loss(thetas, x_hist, theta_star):
         cost += sq_norm(f_i(x_hist[:, i, :]) - f_star(x_hist[:, i, :]))
     return cost / (N * x_hist.shape[0])
 
-def heatmap(thetas, theta_star, admm_xm, out, k):
+def heatmap(thetas, theta_star, k):
 
     fig, axs = plt.subplots(1, 2, figsize=(10, 5))
     
@@ -121,11 +121,9 @@ def heatmap(thetas, theta_star, admm_xm, out, k):
     axs[1].set_xlim(X_MIN, X_MAX)
     axs[1].set_ylim(X_MIN, X_MAX)
 
-    plt.suptitle("Iteration " + str(k))
-    plt.savefig("temp.png")
-    img = cv2.imread("temp.png")
-    out.write(img)
-    plt.show()
+    plt.suptitle(f"Iteration {k}")
+    plt.savefig(f"frames/temp{k}.png")
+    plt.close()
     
 def plot_loss_curves(loss_hist):
     fig, axs = plt.subplots(1, 3, figsize=(12, 4))
@@ -158,12 +156,24 @@ def theta_bounds():
         out.append((0, None))
     return out
 
+def stitch_video():
+    image_folder = 'frames'
+    video_name = 'vid2.mp4'
+
+    cv2out = cv2.VideoWriter(video_name, cv2.VideoWriter_fourcc(*'mp4v'), 20.0, (1000, 500))
+    for k in range(T):
+        img = cv2.imread(f"frames/temp{k}.png")
+        cv2out.write(img)
+    cv2out.release()
+    cv2.destroyAllWindows()
+
+
 X_MIN = -1
 X_MAX = 1
 M = 3
-N = 3
-T = 30
-NOISE = 0.1
+N = 10
+T = 300
+NOISE = 0.03
 
 def main():
     theta_star = gen_theta_star()
@@ -172,9 +182,6 @@ def main():
     y_hist = np.array([sample_environment(x_hist[-1], theta_star)]).reshape((1, N, 1))
     loss_hist = []
     
-    fourcc = cv2.VideoWriter_fourcc(*'mp4V')
-    out = cv2.VideoWriter("vid.mp4", fourcc, 1, (1000, 500))
-
     def x_update_func(x):
         # x is a 2xN array
         # Each agent takes a random step
@@ -207,12 +214,13 @@ def main():
             print(f"Local losses at iteration {k}: {[J_i_func(admm.theta[i], x_hist[:, i, :], y_hist[:, i, :]) for i in range(N)]}")
             print(f"Global loss at iteration {k}: {global_loss(admm.theta, x_hist, theta_star)}")
             print(f"Consensus loss at iteration {k}: {consensus_loss(admm.theta)}")
-        if (k % 10 == 0):
+        if (k % 1 == 0):
             # print(admm.theta.reshape((N, M, 4)))
-            heatmap(admm.theta, theta_star, admm.x, out, k)
-            plot_loss_curves(loss_hist)
+            heatmap(admm.theta, theta_star, admm.x, k)
+            # plot_loss_curves(loss_hist)
         admm.update(theta_bounds())
-        out.release()
+
+    stitch_video()
 
 if __name__ == "__main__":
     main()
