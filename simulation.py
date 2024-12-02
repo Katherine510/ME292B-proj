@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 
 from helpers import sq_norm
 
+import cv2
+
 
 def p_func(x_i, x_j):
     # communication falloff
@@ -84,7 +86,7 @@ def global_loss(thetas, x_hist, theta_star):
         cost += sq_norm(f_i(x_hist[:, i, :]) - f_star(x_hist[:, i, :]))
     return cost / (N * x_hist.shape[0])
 
-def heatmap(thetas, theta_star, admm_x):
+def heatmap(thetas, theta_star, admm_xm, out, k):
 
     fig, axs = plt.subplots(1, 2, figsize=(10, 5))
     
@@ -119,6 +121,10 @@ def heatmap(thetas, theta_star, admm_x):
     axs[1].set_xlim(X_MIN, X_MAX)
     axs[1].set_ylim(X_MIN, X_MAX)
 
+    plt.suptitle("Iteration " + str(k))
+    plt.savefig("temp.png")
+    img = cv2.imread("temp.png")
+    out.write(img)
     plt.show()
     
 def plot_loss_curves(loss_hist):
@@ -139,7 +145,7 @@ def plot_loss_curves(loss_hist):
     axs[0].set_yscale('log')
     axs[1].set_yscale('log')
     axs[2].set_yscale('log')
-
+    
     plt.show()
 
 
@@ -156,7 +162,7 @@ X_MIN = -1
 X_MAX = 1
 M = 3
 N = 3
-T = 10000
+T = 300
 NOISE = 0.1
 
 def main():
@@ -165,6 +171,9 @@ def main():
     x_hist = np.array([x_init(N)]).reshape((1, N, 2))
     y_hist = np.array([sample_environment(x_hist[-1], theta_star)]).reshape((1, N, 1))
     loss_hist = []
+    
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    out = cv2.VideoWriter("vid.mp4", fourcc, 20.0, (640, 480))
 
     def x_update_func(x):
         # x is a 2xN array
@@ -198,11 +207,13 @@ def main():
             print(f"Local losses at iteration {k}: {[J_i_func(admm.theta[i], x_hist[:, i, :], y_hist[:, i, :]) for i in range(N)]}")
             print(f"Global loss at iteration {k}: {global_loss(admm.theta, x_hist, theta_star)}")
             print(f"Consensus loss at iteration {k}: {consensus_loss(admm.theta)}")
-        if (k % 100 == 0):
+        if (k % 10 == 0):
             # print(admm.theta.reshape((N, M, 4)))
-            heatmap(admm.theta, theta_star, admm.x)
+            heatmap(admm.theta, theta_star, admm.x, out, k)
             plot_loss_curves(loss_hist)
         admm.update(theta_bounds())
+        out.release()
+        cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     main()
