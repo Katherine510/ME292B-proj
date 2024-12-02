@@ -172,7 +172,7 @@ X_MIN = -1
 X_MAX = 1
 M = 3
 N = 10
-T = 300
+T = 500
 NOISE = 0.03
 
 def main():
@@ -216,7 +216,7 @@ def main():
             print(f"Consensus loss at iteration {k}: {consensus_loss(admm.theta)}")
         if (k % 1 == 0):
             # print(admm.theta.reshape((N, M, 4)))
-            heatmap(admm.theta, theta_star, admm.x, k)
+            heatmap(admm.theta, theta_star, k)
             # plot_loss_curves(loss_hist)
         admm.update(theta_bounds())
 
