@@ -1,19 +1,16 @@
-
-from ASV_ADMM import ASV_ADMM
+from ASV_ADMM import ASV_ADMM, BaselineADMM
 import numpy as np
 
 import matplotlib.pyplot as plt
-
-import time
-import functools
 
 from helpers import sq_norm
 
 
 def p_func(x_i, x_j):
     # communication falloff
-    # return X_MAX / (1 + sq_norm(x_i - x_j))
-    return 1
+    falloff_rate = 3
+    return 1 / (1 + falloff_rate * sq_norm(x_i - x_j))
+    # return 1
 
 
 #Let X_i be all possible states for agent i, given by the square [X_MIN, X_MAX]^2. 
@@ -39,7 +36,6 @@ def resource_func(theta_flat):
         X = X.reshape(-1, 2)
         # Compute differences and norms in a vectorized way
         diff = X[:, None, :] - cms[None, :, :]  # Shape: (N, M, 2)
-        # print(f"diff: {diff}")
         sq_diffs = sq_norm(diff, axis=2)    # Shape: (N, M)
 
         # Compute Gaussian contributions
@@ -54,40 +50,21 @@ def resource_func(theta_flat):
 
 # theta is (ams, cmxs, cmys, sms)_i for i=1^N. We use MSE as the regression cost function
 def J_i_func(theta_i_flat, x_i_hist, y_i_hist):
-    # print("\n start j_i_func")
-    # print(x_i_hist)
-    # print(y_i_hist)
-
     f_i = resource_func(theta_i_flat)
-
-    # cost = 0
-
-    # for x, y in zip(x_i_hist, y_i_hist):
-    #     # print(x, f_i(x), y)
-    #     cost += (f_i(x) - y) ** 2
-
-    # return cost / x_i_hist.shape[0]
-
-    # print(f_i(x_i_hist))
     residual = (f_i(x_i_hist) - y_i_hist)
 
     return sq_norm(residual) / x_i_hist.shape[0]
 
 def sample_environment(X, theta_star):
     f_star = resource_func(theta_star)
-    # res = np.zeros(N)
-    # for i in range(N):
-    #     res[i] = f_star(X[i]) + np.random.normal(0, NOISE)
-    # return res
-    # print((f_star(X) + np.random.normal(0, NOISE, size=(N,1))).shape)
     return f_star(X) + np.random.normal(0, NOISE, size=(N,1))
 
 
 def gen_theta_star():
     np.random.seed(0)
-    ams = np.random.rand(M)
+    ams = np.random.rand(M) * (X_MAX - X_MIN) / 2
     cms = (X_MAX - X_MIN) * np.random.rand(M, 2) + X_MIN
-    sms = np.random.rand(M)
+    sms = np.random.rand(M) * (X_MAX - X_MIN) + 0.5
 
     print(f"ams: {ams}\ncms: {cms}\nsms: {sms}")
     return np.array([ams, cms[:, 0], cms[:, 1], sms]).T
@@ -96,19 +73,16 @@ def gen_theta_star():
 def theta_init(num_agents):
     return (np.random.rand(num_agents, M, 4)).reshape((num_agents, -1))
 
+def consensus_loss(thetas):
+    return np.sum([sq_norm(thetas[i] - np.mean(thetas, axis=0))**2 for i in range(N)]) / N
+
 def global_loss(thetas, x_hist, theta_star):
     f_star = resource_func(theta_star)
     cost = 0
     for i in range(N):
         f_i = resource_func(thetas[i])
-        # print(f_i(x_hist[:, i, :]).shape)
         cost += sq_norm(f_i(x_hist[:, i, :]) - f_star(x_hist[:, i, :]))
     return cost / (N * x_hist.shape[0])
-    # for i in range(N):
-    #     f_i = resource_func(theta[i])
-    #     for x in x_hist[:, i, :]:
-    #         cost += (f_i(x) - f_star(x)) ** 2
-    # return cost / (N * x_hist.shape[0])
 
 def heatmap(thetas, theta_star, admm_x):
 
@@ -134,9 +108,9 @@ def heatmap(thetas, theta_star, admm_x):
     axs[1].contourf(X, Y, Z, 20, cmap='cividis')
 
     # plot points where agents are
-    for i in range(N):
-        axs[0].scatter(admm_x[i, 0], admm_x[i, 1], c='red')
-        axs[1].scatter(admm_x[i, 0], admm_x[i, 1], c='red')
+    # for i in range(N):
+    #     axs[0].scatter(admm_x[i, 0], admm_x[i, 1], c='red')
+    #     axs[1].scatter(admm_x[i, 0], admm_x[i, 1], c='red')
 
     axs[1].set_title("Average Agent Estimate")
 
@@ -147,20 +121,24 @@ def heatmap(thetas, theta_star, admm_x):
 
     plt.show()
     
-def plot_loss_curves(losses):
-    fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+def plot_loss_curves(loss_hist):
+    fig, axs = plt.subplots(1, 3, figsize=(12, 4))
 
     for i in range(N):
-        axs[0].plot([loss[i] for loss in losses], label=f"Agent {i}")
+        axs[0].plot([loss_dict[i] for loss_dict in loss_hist], label=f"Agent {i}")
     axs[0].set_title("Local Losses")
     axs[0].legend()
 
-    axs[1].plot([loss["global"] for loss in losses])
+    axs[1].plot([loss_dict["global"] for loss_dict in loss_hist])
     axs[1].set_title("Global Loss")
+
+    axs[2].plot([loss_dict["consensus"] for loss_dict in loss_hist])
+    axs[2].set_title("Consensus Loss")
 
     # log scale on y axis
     axs[0].set_yscale('log')
     axs[1].set_yscale('log')
+    axs[2].set_yscale('log')
 
     plt.show()
 
@@ -174,19 +152,17 @@ def theta_bounds():
         out.append((0, None))
     return out
 
-X_MIN = 0
-X_MAX = 1
-M = 4
-N = 5
-T = 1000
-NOISE = 0.0
+X_MIN = -2
+X_MAX = 2
+M = 5
+N = 3
+T = 10000
+NOISE = 0.1
 
 def main():
     theta_star = gen_theta_star()
 
     x_hist = np.array([x_init(N)]).reshape((1, N, 2))
-    # print(sample_environment(x_hist[-1], theta_star).shape)
-    # print(x_hist[-1].shape)
     y_hist = np.array([sample_environment(x_hist[-1], theta_star)]).reshape((1, N, 1))
     loss_hist = []
 
@@ -202,7 +178,7 @@ def main():
         x_hist = np.append(x_hist, x, axis=0)
         y_hist = np.append(y_hist, y, axis=0)
         
-        stepsize = 0.5
+        stepsize = 1
         return np.clip((1 - stepsize) * x + stepsize * ((X_MAX - X_MIN) * np.random.rand(1, N, 2) + X_MIN), X_MIN, X_MAX).reshape((N, 2))
 
 
@@ -210,20 +186,23 @@ def main():
         lambda theta_i_flat : J_i_func(theta_i_flat, x_hist[:, i, :], y_hist[:, i, :])
         for i in range(N)
     ])
-    admm = ASV_ADMM(Jis, N, p_func, x_update_func, theta_init(N), x_init(N))
+    admm = BaselineADMM(Jis, N, p_func, x_update_func, theta_init(N), x_init(N))
     for k in range(T):
         losses = {i : J_i_func(admm.theta[i], x_hist[:, i, :], y_hist[:, i, :]) for i in range(N)}
         losses["global"] = global_loss(admm.theta, x_hist, theta_star)
+        losses["consensus"] = consensus_loss(admm.theta)
         loss_hist.append(losses)
 
-        if (k % 50 == 0):
+        if (k % 20 == 0):
+            print("Iteration", k)
             print(f"Local losses at iteration {k}: {[J_i_func(admm.theta[i], x_hist[:, i, :], y_hist[:, i, :]) for i in range(N)]}")
             print(f"Global loss at iteration {k}: {global_loss(admm.theta, x_hist, theta_star)}")
-            print(admm.theta.reshape((N, M, 4)))
+            print(f"Consensus loss at iteration {k}: {consensus_loss(admm.theta)}")
+        if (k % 100 == 0):
+            # print(admm.theta.reshape((N, M, 4)))
             heatmap(admm.theta, theta_star, admm.x)
             plot_loss_curves(loss_hist)
         admm.update(theta_bounds())
-        # print(admm.x)
 
 if __name__ == "__main__":
     main()

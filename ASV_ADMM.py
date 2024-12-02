@@ -5,7 +5,7 @@ from helpers import sq_norm
 
 class ASV_ADMM:
 
-    def __init__(self, Jis, num_agents, p_func, x_update_func, theta_init, x_init):
+    def __init__(self, Jis, num_agents, p_func, x_update_func, theta_init, x_init, use_alpha=True, use_bregman=True):
         # N
         self.num_agents = num_agents
         
@@ -37,6 +37,9 @@ class ASV_ADMM:
         self._neighbors = np.random.sample((self.num_agents, self.num_agents)) < self.p
         self._update_neighbors()
 
+        self.use_alpha = use_alpha
+        self.use_bregman = use_bregman
+
         # quadratic penalty parameter
         self.rho = 0.1
 
@@ -49,10 +52,24 @@ class ASV_ADMM:
         return np.argwhere(self._neighbors[i])
     
     def alpha(self, i, j):
-        denom = 0
-        for l in self.neighbors(i):
-            denom += np.exp(self.p[i, l])
-        return np.exp(self.p[i, j]) / denom
+        # denom = 0
+        # for l in self.neighbors(i):
+        #     denom += np.exp(self.p[i, l])
+        # return np.exp(self.p[i, j]) / denom
+        
+        # vectorized version
+
+        # Step 1: Get the exponential values of self.p[i, :] for all neighbors of i
+        exp_p = np.exp(self.p[i, :])  # Exponentiate all p[i, l] values
+        
+        # Step 2: Extract the neighbors of i using the adjacency matrix (self._neighbors)
+        neighbors_i = self._neighbors[i]  # Binary vector for the neighbors of i
+        
+        # Step 3: Compute the sum of exponentials for all neighbors of i
+        denom = np.sum(exp_p * neighbors_i)  # Only sum over neighbors
+        
+        # Step 4: Compute alpha(i, j) using the value of p[i, j] and the precomputed denominator
+        return exp_p[j] / denom
 
     def update(self, theta_bounds=None):
 
@@ -64,8 +81,15 @@ class ASV_ADMM:
             def theta_i_func(theta_i):
                 obj = self.J[i](theta_i) + self.e[i].T @ theta_i
                 for j in self.neighbors(i):
-                    obj += self.rho * self.alpha(i, j) * sq_norm(theta_i - (self.theta[i] + self.theta[j]) / 2) \
-                           + np.sqrt(self.timestep) / self.beta0 * sq_norm(theta_i - self.theta[i])
+                    # obj += self.rho * self.alpha(i, j) * sq_norm(theta_i - (self.theta[i] + self.theta[j]) / 2) \
+                    #        + np.sqrt(self.timestep) / self.beta0 * sq_norm(theta_i - self.theta[i])
+                    term = self.rho * sq_norm(theta_i - (self.theta[i] + self.theta[j]) / 2)
+                    if self.use_alpha:
+                        term *= self.alpha(i, j)
+                    if self.use_bregman:
+                        term += np.sqrt(self.timestep) / self.beta0 * sq_norm(theta_i - self.theta[i])
+                    obj += term
+                    
                 return obj
             
             optim_result = scipy.optimize.minimize(theta_i_func, 
@@ -84,7 +108,10 @@ class ASV_ADMM:
         for i in range(self.num_agents):
             for j in self.neighbors(i):
                 # next_e[i] += self.rho * self.alpha(i, j) * (next_theta[i] - next_theta[j]).reshape(-1)
-                next_e[i] = self.e[i]
+                e_term = self.rho * (next_theta[i] - next_theta[j]).reshape(-1)
+                if self.use_alpha:
+                    e_term *= self.alpha(i, j)
+                next_e[i] += e_term
 
         # state update
         self._update_x()
@@ -112,3 +139,13 @@ class ASV_ADMM:
 
     def _update_neighbors(self):
         self._neighbors = np.random.sample(self._neighbors.shape) < self.p
+
+
+class BaselineADMM(ASV_ADMM):
+    def __init__(self, Jis, num_agents, p_func, x_update_func, theta_init, x_init):
+        super().__init__(Jis, num_agents, p_func, x_update_func, theta_init, x_init, use_alpha=False, use_bregman=False)
+
+
+class BregmanBaselineADMM(ASV_ADMM):
+    def __init__(self, Jis, num_agents, p_func, x_update_func, theta_init, x_init):
+        super().__init__(Jis, num_agents, p_func, x_update_func, theta_init, x_init, use_alpha=False, use_bregman=True)
