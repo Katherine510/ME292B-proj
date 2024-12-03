@@ -3,14 +3,14 @@ import numpy as np
 
 from helpers import sq_norm
 
-class ASV_ADMM:
+class ADMMBase:
 
-    def __init__(self, Jis, num_agents, p_func, x_update_func, theta_init, x_init, use_alpha=True, use_bregman=True):
+    def _initialize(self, Ji, num_agents, p_func, x_update_func, theta_init, x_init, use_alpha, use_bregman):
         # N
         self.num_agents = num_agents
-        
+
         # 1xN array of cost functions, one for each agent
-        self.J = Jis
+        self.J = Ji
         assert (self.J.shape[0] == self.num_agents)
 
         # decision variables, R^(N x n) (one row for each agent)
@@ -22,14 +22,14 @@ class ASV_ADMM:
         self.x = x_init
         assert (len(self.x.shape) == 2)
         assert (self.x.shape[0] == self.num_agents)
-        
-        # maps states x_i, x_j to communication probabilities 
+
+        # maps states x_i, x_j to communication probabilities
         self._p_func = p_func
         # updates x
         self._x_update_func = x_update_func
-        
+
         self._update_p()
-        
+
         # dual variable aggregate, Nxn
         self.e = np.zeros_like(self.theta)
 
@@ -44,7 +44,7 @@ class ASV_ADMM:
         self.rho = 0.001
 
         # bregman divergence parameter
-        self.beta0 = 1000
+        self.beta0 = 100
 
         self.timestep = 1
 
@@ -141,11 +141,14 @@ class ASV_ADMM:
         self._neighbors = np.random.sample(self._neighbors.shape) < self.p
 
 
-class BaselineADMM(ASV_ADMM):
+class ConsensusADMM(ADMMBase):
     def __init__(self, Jis, num_agents, p_func, x_update_func, theta_init, x_init):
-        super().__init__(Jis, num_agents, p_func, x_update_func, theta_init, x_init, use_alpha=False, use_bregman=False)
+        super()._initialize(Jis, num_agents, p_func, x_update_func, theta_init, x_init, use_alpha=False, use_bregman=False)
 
-
-class BregmanBaselineADMM(ASV_ADMM):
+class BregmanConsensusADMM(ADMMBase):
     def __init__(self, Jis, num_agents, p_func, x_update_func, theta_init, x_init):
-        super().__init__(Jis, num_agents, p_func, x_update_func, theta_init, x_init, use_alpha=False, use_bregman=True)
+        super()._initialize(Jis, num_agents, p_func, x_update_func, theta_init, x_init, use_alpha=False, use_bregman=True)
+
+class ASV_ADMM(ADMMBase):
+    def __init__(self, Jis, num_agents, p_func, x_update_func, theta_init, x_init):
+        super()._initialize(Jis, num_agents, p_func, x_update_func, theta_init, x_init, use_alpha=True, use_bregman=True)
