@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from helpers import sq_norm
 
 import cv2
+import imageio
 import os
 
 
@@ -48,7 +49,21 @@ class ResourceSimulation:
 
     def p_func(self, x_i, x_j):
         # communication falloff
-        return 1 / (1 + self.falloff_rate * sq_norm(x_i - x_j))
+        # return 1 / (1 + self.falloff_rate * sq_norm(x_i - x_j))
+    
+        # obstacle.
+
+        # grab the midpoint between the agents
+        midpoint = (x_i + x_j) / 2
+
+        # if the midpoint is higher on the mountain, have a worse chance of communicating
+        top_am = np.max(self.theta_star[:, 0])
+        midpoint_altitude = self.resource_func(self.theta_star)(midpoint)
+
+        # print(f"{np.clip((midpoint_altitude / top_am), 0, 1)}")
+        return np.clip((midpoint_altitude / top_am), 0, 1)
+
+
         # return 1
 
     def x_update_func(self, x):
@@ -319,6 +334,11 @@ def stitch_video(video_filename, frames_folder, T, frame_size, fps=30):
     cv2out.release()
     cv2.destroyAllWindows()
 
+def stitch_gif(gif_filename, frames_folder, T, fps=30):
+    images_bgr = [cv2.imread(f"{frames_folder}/temp{k}.png") for k in range(T)]
+    images_rgb = [cv2.cvtColor(img, cv2.COLOR_BGR2RGB) for img in images_bgr]
+    imageio.mimsave(gif_filename, images_rgb, fps=fps)
+
 def main():
 
     # X_MIN=-1, X_MAX=1, M=3, N=10, T=1000, NOISE=0.1, falloff_rate=1, seed=79 is a good run
@@ -329,13 +349,13 @@ def main():
     X_MAX = 1
     M = 1
     N = 3
-    T = 200
+    T = 45
     NOISE = 0.1
     falloff_rate = 3
 
     seed = 79
 
-    RUN_NAME = f"BregmanComparisonX_MIN={X_MIN}_X_MAX={X_MAX}_M={M}_N={N}_T={T}_NOISE={NOISE}_falloff_rate={falloff_rate}_seed={seed}"
+    RUN_NAME = f"obstacle_BregmanComparisonX_MIN={X_MIN}_X_MAX={X_MAX}_M={M}_N={N}_T={T}_NOISE={NOISE}_falloff_rate={falloff_rate}_seed={seed}"
 
     asv = ResourceSimulation(ASV_ADMM, X_MIN, X_MAX, M, N, T, NOISE, falloff_rate, seed, video_folder="resource-sim-asv")
     cadmm = ResourceSimulation(BregmanConsensusADMM, X_MIN, X_MAX, M, N, T, NOISE, falloff_rate, seed, video_folder="resource-sim-cadmm")
