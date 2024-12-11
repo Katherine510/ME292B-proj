@@ -11,7 +11,7 @@ import os
 
 class ResourceSimulation:
 
-    def __init__(self, ADMM_class, X_MIN, X_MAX, M, N, T, NOISE, falloff_rate, seed, video_folder):
+    def __init__(self, ADMM_class, X_MIN, X_MAX, M, N, T, NOISE, falloff_rate, seed, video_folder, max_dist=0):
         
         np.random.seed(seed)
 
@@ -27,6 +27,7 @@ class ResourceSimulation:
         self.T = T
         self.NOISE = NOISE
         self.falloff_rate = falloff_rate
+        self.max_dist = max_dist
 
         self.theta_star = self.gen_theta_star()
 
@@ -48,6 +49,10 @@ class ResourceSimulation:
 
     def p_func(self, x_i, x_j):
         # communication falloff
+        # dist = np.linalg.norm(x_i - x_j)
+        # if dist > self.max_dist:
+        #     return 0
+        
         return 1 / (1 + self.falloff_rate * sq_norm(x_i - x_j))
         # return 1
 
@@ -328,17 +333,19 @@ def main():
     X_MIN = -1
     X_MAX = 1
     M = 1
-    N = 3
+    N = 5
     T = 200
     NOISE = 0.1
-    falloff_rate = 3
+    falloff_rate = 10**6
+    
+    max_dist = .3
 
-    seed = 79
+    seed = 80
 
-    RUN_NAME = f"BregmanComparisonX_MIN={X_MIN}_X_MAX={X_MAX}_M={M}_N={N}_T={T}_NOISE={NOISE}_falloff_rate={falloff_rate}_seed={seed}"
+    RUN_NAME = f"BregmanComparisonX_MIN={X_MIN}_X_MAX={X_MAX}_M={M}_N={N}_T={T}_NOISE={NOISE}_falloff_rate={falloff_rate}_seed={seed}_maxd={max_dist}"
 
-    asv = ResourceSimulation(ASV_ADMM, X_MIN, X_MAX, M, N, T, NOISE, falloff_rate, seed, video_folder="resource-sim-asv")
-    cadmm = ResourceSimulation(BregmanConsensusADMM, X_MIN, X_MAX, M, N, T, NOISE, falloff_rate, seed, video_folder="resource-sim-cadmm")
+    asv = ResourceSimulation(ASV_ADMM, X_MIN, X_MAX, M, N, T, NOISE, falloff_rate, seed, video_folder="resource-sim-asv", max_dist=max_dist)
+    cadmm = ResourceSimulation(BregmanConsensusADMM, X_MIN, X_MAX, M, N, T, NOISE, falloff_rate, seed, video_folder="resource-sim-cadmm", max_dist=max_dist)
     for k in range(T):
         asv.step()
         cadmm.step()
