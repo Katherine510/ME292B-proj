@@ -62,15 +62,34 @@ class ResourceSimulation:
         self.y_hist = np.append(self.y_hist, y, axis=0)
         
         stepsize = 1
-        return np.clip((1 - stepsize) * x + stepsize * ((self.X_MAX - self.X_MIN) * np.random.rand(1, self.N, 2) + self.X_MIN), self.X_MIN, self.X_MAX).reshape((self.N, 2))
 
+        return self.sample_x_regions(self.N)
 
     #Let X_i be all possible states for agent i, given by the square [self.X_MIN, self.X_MAX]^2. 
     # We want each agent to roam the region and take samples
 
     def x_init(self, num_agents):
-        # initialize at random points in the square
-        return (self.X_MAX - self.X_MIN) * np.random.rand(num_agents, 2) + self.X_MIN
+        return self.sample_x_regions(num_agents)
+
+    def sample_x_regions(self, num_agents):
+        # assumes N = 4
+        # initialize at random points in their quadrant. assume N=4
+
+        # quadrants are upper-right, upper-left, lower-left, lower-right
+
+        # sample four points in the four quadrants
+        x = np.random.rand(num_agents, 2)
+
+        # move x1 to upper left
+        x[1, 0] = -x[1, 0]
+
+        # move x2 to lower left
+        x[2] = -x[2]
+
+        # move x3 to lower right
+        x[3, 1] = -x[3, 1]
+
+        return x
 
     def theta_init(self, num_agents):
         return (np.random.rand(num_agents, self.M, 4)).reshape((num_agents, -1))
@@ -235,6 +254,10 @@ def save_comparison_heatmap(theta_star, theta_asv, theta_cadmm, resource_func, x
     im = axs[0].contourf(X, Y, Z_gt, 20, cmap='cividis', vmin=vmin, vmax=vmax)
     axs[0].set_title("Ground Truth")
 
+    # draw x and y axes passing through 0, 0
+    axs[0].axhline(0, color='black', linewidth=0.5)
+    axs[0].axvline(0, color='black', linewidth=0.5)
+
     Z_ASV = np.array([resource_func(theta_asv_mean)(point) for point in arr]).reshape(X.shape)
 
     axs[1].contourf(X, Y, Z_ASV, 20, cmap='cividis', vmin=vmin, vmax=vmax)
@@ -328,14 +351,14 @@ def main():
     X_MIN = -1
     X_MAX = 1
     M = 1
-    N = 3
-    T = 200
+    N = 4
+    T = 100
     NOISE = 0.1
     falloff_rate = 3
 
     seed = 79
 
-    RUN_NAME = f"BregmanComparisonX_MIN={X_MIN}_X_MAX={X_MAX}_M={M}_N={N}_T={T}_NOISE={NOISE}_falloff_rate={falloff_rate}_seed={seed}"
+    RUN_NAME = f"quadrants_BregmanComparisonX_MIN={X_MIN}_X_MAX={X_MAX}_M={M}_N={N}_T={T}_NOISE={NOISE}_falloff_rate={falloff_rate}_seed={seed}"
 
     asv = ResourceSimulation(ASV_ADMM, X_MIN, X_MAX, M, N, T, NOISE, falloff_rate, seed, video_folder="resource-sim-asv")
     cadmm = ResourceSimulation(BregmanConsensusADMM, X_MIN, X_MAX, M, N, T, NOISE, falloff_rate, seed, video_folder="resource-sim-cadmm")
