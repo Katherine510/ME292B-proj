@@ -40,11 +40,11 @@ class ADMMBase:
         self.use_alpha = use_alpha
         self.use_bregman = use_bregman
 
-        # quadratic penalty parameter
+        # quadratic penalty consensus parameter
         self.rho = 0.001
 
         # bregman divergence parameter
-        self.beta0 = 100
+        self.beta0 = 0.001
 
         self.timestep = 1
 
@@ -87,7 +87,7 @@ class ADMMBase:
                     if self.use_alpha:
                         term *= self.alpha(i, j)
                     if self.use_bregman:
-                        term += np.sqrt(self.timestep) / self.beta0 * sq_norm(theta_i - self.theta[i])
+                        term += self.beta0 * np.sqrt(self.timestep) * sq_norm(theta_i - self.theta[i])
                     obj += term
                     
                 return obj

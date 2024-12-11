@@ -12,7 +12,7 @@ import os
 
 class ResourceSimulation:
 
-    def __init__(self, ADMM_class, X_MIN, X_MAX, M, N, T, NOISE, falloff_rate, seed, video_folder):
+    def __init__(self, ADMM_class, X_MIN, X_MAX, M, N, T, NOISE, falloff_rate, seed, video_folder, obstacle_centers=None, obstacle_radii=None):
         
         np.random.seed(seed)
 
@@ -31,6 +31,9 @@ class ResourceSimulation:
 
         self.theta_star = self.gen_theta_star()
 
+        self.obstacle_centers = obstacle_centers or []
+        self.obstacle_radii = obstacle_radii or []
+
         self.x_hist = np.array([self.x_init(self.N)]).reshape((1, self.N, 2))
         self.y_hist = np.array([self.sample_environment(self.x_hist[-1], self.theta_star)]).reshape((1, self.N, 1))
         self.loss_hist = []
@@ -48,23 +51,55 @@ class ResourceSimulation:
 
 
     def p_func(self, x_i, x_j):
-        # communication falloff
+        ##### communication falloff
         # return 1 / (1 + self.falloff_rate * sq_norm(x_i - x_j))
     
-        # obstacle.
+        ##### altitude communication falloff based on mountain
 
-        # grab the midpoint between the agents
-        midpoint = (x_i + x_j) / 2
+        # # grab the midpoint between the agents
+        # midpoint = (x_i + x_j) / 2
 
-        # if the midpoint is higher on the mountain, have a worse chance of communicating
-        top_am = np.max(self.theta_star[:, 0])
-        midpoint_altitude = self.resource_func(self.theta_star)(midpoint)
+        # # if the midpoint is higher on the mountain, have a worse chance of communicating
+        # top_am = np.max(self.theta_star[:, 0])
+        # midpoint_altitude = self.resource_func(self.theta_star)(midpoint)
 
-        # print(f"{np.clip((midpoint_altitude / top_am), 0, 1)}")
-        return np.clip((midpoint_altitude / top_am), 0, 1)
+        # # print(f"{np.clip((midpoint_altitude / top_am), 0, 1)}")
+        # return np.clip((midpoint_altitude / top_am), 0, 1)
 
 
+        ##### dead zones
+        # for center, radius in zip(self.obstacle_centers, self.obstacle_radii):
+        #     if sq_norm(center - x_i) < radius ** 2 or sq_norm(center - x_j) < radius ** 2:
+        #         return 0
         # return 1
+
+        ##### obstacles
+        # if the line between the two agents intersects with an obstacle, return 0
+        for center, radius in zip(self.obstacle_centers, self.obstacle_radii):
+            # vector from x_i to x_j
+            v = x_j - x_i
+            # vector from x_i to the center of the obstacle
+            w = center - x_i
+            c1 = np.dot(w, v)
+            c2 = np.dot(v, v)
+            b = c1 / c2
+            if b < 0:
+                closest_point = x_i
+            elif b > 1:
+                closest_point = x_j
+            else:
+                closest_point = x_i + b * v
+
+            if sq_norm(closest_point - center) < radius ** 2:
+                return 0
+        return 1
+    
+    def in_obstacle(self, x):
+        for center, radius in zip(self.obstacle_centers, self.obstacle_radii):
+            if sq_norm(center - x) < radius ** 2:
+                return True
+        return False
+
 
     def x_update_func(self, x):
         # x is a 2xN array
@@ -77,8 +112,14 @@ class ResourceSimulation:
         self.y_hist = np.append(self.y_hist, y, axis=0)
         
         stepsize = 1
-        return np.clip((1 - stepsize) * x + stepsize * ((self.X_MAX - self.X_MIN) * np.random.rand(1, self.N, 2) + self.X_MIN), self.X_MIN, self.X_MAX).reshape((self.N, 2))
-
+        new_points = np.clip((1 - stepsize) * x + stepsize * ((self.X_MAX - self.X_MIN) * np.random.rand(1, self.N, 2) + self.X_MIN), self.X_MIN, self.X_MAX).reshape((self.N, 2))
+        
+        # if new points are in an obstacle, don't move there
+        for i in range(self.N):
+            if self.in_obstacle(new_points[i]):
+                new_points[i] = x[0, i]
+        
+        return new_points
 
     #Let X_i be all possible states for agent i, given by the square [self.X_MIN, self.X_MAX]^2. 
     # We want each agent to roam the region and take samples
@@ -227,7 +268,7 @@ class ResourceSimulation:
         self.k += 1
 
 
-def save_comparison_heatmap(theta_star, theta_asv, theta_cadmm, resource_func, x_min, x_max, k, image_folder):
+def save_comparison_heatmap(theta_star, theta_asv, theta_cadmm, resource_func, x_min, x_max, k, image_folder, obstacle_centers=None, obstacle_radii=None):
     fig, axs = plt.subplots(1, 3, figsize=(16, 9))
 
     og_axs = axs
@@ -248,6 +289,14 @@ def save_comparison_heatmap(theta_star, theta_asv, theta_cadmm, resource_func, x
     vmax = np.max(Z_gt)
 
     im = axs[0].contourf(X, Y, Z_gt, 20, cmap='cividis', vmin=vmin, vmax=vmax)
+    # plot obstacles on ground truth map
+
+    obstacle_centers = obstacle_centers or []
+    obstacle_radii = obstacle_radii or []
+    for center, radius in zip(obstacle_centers, obstacle_radii):
+        circle = plt.Circle(center, radius, color='blue', fill=True)
+        axs[0].add_artist(circle)
+
     axs[0].set_title("Ground Truth")
 
     Z_ASV = np.array([resource_func(theta_asv_mean)(point) for point in arr]).reshape(X.shape)
@@ -339,6 +388,11 @@ def stitch_gif(gif_filename, frames_folder, T, fps=30):
     images_rgb = [cv2.cvtColor(img, cv2.COLOR_BGR2RGB) for img in images_bgr]
     imageio.mimsave(gif_filename, images_rgb, fps=fps)
 
+def gen_obstacles(X_MIN, X_MAX, num_obstacles):
+    obstacle_centers = [(X_MAX - X_MIN) * np.random.rand(2) + X_MIN for _ in range(num_obstacles)]
+    obstacle_radii = [0.1 + 0.2 * np.random.rand() for _ in range(num_obstacles)]
+    return obstacle_centers, obstacle_radii
+
 def main():
 
     # X_MIN=-1, X_MAX=1, M=3, N=10, T=1000, NOISE=0.1, falloff_rate=1, seed=79 is a good run
@@ -348,22 +402,24 @@ def main():
     X_MIN = -1
     X_MAX = 1
     M = 1
-    N = 3
-    T = 45
+    N = 5
+    T = 50
     NOISE = 0.1
     falloff_rate = 3
 
-    seed = 79
+    seed = 82
 
-    RUN_NAME = f"obstacle_BregmanComparisonX_MIN={X_MIN}_X_MAX={X_MAX}_M={M}_N={N}_T={T}_NOISE={NOISE}_falloff_rate={falloff_rate}_seed={seed}"
+    obstacle_centers, obstacle_radii = gen_obstacles(X_MIN, X_MAX, 5)
 
-    asv = ResourceSimulation(ASV_ADMM, X_MIN, X_MAX, M, N, T, NOISE, falloff_rate, seed, video_folder="resource-sim-asv")
-    cadmm = ResourceSimulation(BregmanConsensusADMM, X_MIN, X_MAX, M, N, T, NOISE, falloff_rate, seed, video_folder="resource-sim-cadmm")
+    RUN_NAME = f"realobs_BregmanComparisonX_MIN={X_MIN}_X_MAX={X_MAX}_M={M}_N={N}_T={T}_NOISE={NOISE}_falloff_rate={falloff_rate}_seed={seed}_obs={len(obstacle_centers)}"
+
+    asv = ResourceSimulation(ASV_ADMM, X_MIN, X_MAX, M, N, T, NOISE, falloff_rate, seed, video_folder="resource-sim-asv", obstacle_centers=obstacle_centers, obstacle_radii=obstacle_radii)
+    cadmm = ResourceSimulation(BregmanConsensusADMM, X_MIN, X_MAX, M, N, T, NOISE, falloff_rate, seed, video_folder="resource-sim-cadmm", obstacle_centers=obstacle_centers, obstacle_radii=obstacle_radii)
     for k in range(T):
         asv.step()
         cadmm.step()
 
-        save_comparison_heatmap(asv.theta_star, asv.admm.theta, cadmm.admm.theta, asv.resource_func, X_MIN, X_MAX, k, f"{RUN_NAME}/frames")
+        save_comparison_heatmap(asv.theta_star, asv.admm.theta, cadmm.admm.theta, asv.resource_func, X_MIN, X_MAX, k, f"{RUN_NAME}/frames", obstacle_centers=obstacle_centers, obstacle_radii=obstacle_radii)
 
         if (k % 20 == 0):
 
